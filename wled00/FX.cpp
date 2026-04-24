@@ -10954,10 +10954,16 @@ void mode_comet_cycle(void) {
   const uint_fast16_t n   = bufBytes / 3;
   const uint_fast16_t len = SEGLEN;
 
-  uint32_t tickMs = 10 + ((uint32_t)(255 - SEGMENT.speed) * 2);
+  // sx=0 -> ~510ms per tick (very slow), sx=255 -> every frame (fastest).
+  // Above sx=200 we also skip multiple color-indexes per tick for extreme speed.
+  uint32_t tickMs = ((uint32_t)(255 - SEGMENT.speed) * 2);
+  uint_fast16_t stepsPerTick = 1;
+  if (SEGMENT.speed > 200) {
+    stepsPerTick = 1 + ((uint_fast16_t)SEGMENT.speed - 200) / 4;
+  }
   if (strip.now - SEGENV.step > tickMs) {
     SEGENV.step = strip.now;
-    SEGENV.aux0 = (SEGENV.aux0 + 1) % n;
+    SEGENV.aux0 = (SEGENV.aux0 + stepsPerTick) % n;
   }
   const uint_fast16_t offset = SEGENV.aux0;
 
@@ -10983,7 +10989,8 @@ void mode_phased_cycle(void) {
   if (n < 1) FX_FALLBACK_STATIC;
 
   uint_fast16_t steps = SEGMENT.intensity < 2 ? 2 : SEGMENT.intensity;
-  uint32_t dwellMs    = 200 + ((uint32_t)SEGMENT.speed * 20);
+  // High sx = fast (short dwell). sx=0 -> ~2.6s per color, sx=255 -> 10ms.
+  uint32_t dwellMs    = 10 + ((uint32_t)(255 - SEGMENT.speed) * 10);
   uint_fast16_t phase = SEGMENT.custom1 % n;
 
   uint32_t totalMs = (uint32_t)n * dwellMs;
