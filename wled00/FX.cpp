@@ -10941,6 +10941,74 @@ void mode_slow_transition(void) {
 }
 static const char _data_FX_MODE_SLOW_TRANSITION[] PROGMEM = "Slow Transition@Time (min),,,,,,Sweep;!;!;1;pal=2,sx=0,ix=0";
 
+/*
+ * Comet Cycle: N colors from seg.data (written by JSON "cbuf"), spread across
+ * the strip, rotated by 1 color-index per tick. Speed slider = tick interval.
+ */
+void mode_comet_cycle(void) {
+  if (SEGLEN < 1) FX_FALLBACK_STATIC;
+  const byte *buf = SEGENV.data;
+  uint16_t bufBytes = SEGENV.dataSize();
+  if (!buf || bufBytes < 3) FX_FALLBACK_STATIC;
+
+  const uint_fast16_t n   = bufBytes / 3;
+  const uint_fast16_t len = SEGLEN;
+
+  uint32_t tickMs = 10 + ((uint32_t)(255 - SEGMENT.speed) * 2);
+  if (strip.now - SEGENV.step > tickMs) {
+    SEGENV.step = strip.now;
+    SEGENV.aux0 = (SEGENV.aux0 + 1) % n;
+  }
+  const uint_fast16_t offset = SEGENV.aux0;
+
+  for (uint_fast16_t i = 0; i < len; i++) {
+    uint_fast16_t idx = (((uint32_t)i * n) / len + offset) % n;
+    SEGMENT.setPixelColor((int)i,
+      buf[idx*3 + 0], buf[idx*3 + 1], buf[idx*3 + 2]);
+  }
+}
+static const char _data_FX_MODE_COMET_CYCLE[] PROGMEM = "Comet Cycle@!,;;;01";
+
+/*
+ * Phased Cycle: interpolate through N colors from seg.data (written by JSON
+ * "cbuf") as a solid strip. sx = dwell per color, ix = interpolation steps,
+ * c1 = color-index offset (per-segment phase).
+ */
+void mode_phased_cycle(void) {
+  if (SEGLEN < 1) FX_FALLBACK_STATIC;
+  const byte *buf = SEGENV.data;
+  uint16_t bufBytes = SEGENV.dataSize();
+  if (!buf || bufBytes < 3) FX_FALLBACK_STATIC;
+  const uint_fast16_t n = bufBytes / 3;
+  if (n < 1) FX_FALLBACK_STATIC;
+
+  uint_fast16_t steps = SEGMENT.intensity < 2 ? 2 : SEGMENT.intensity;
+  uint32_t dwellMs    = 200 + ((uint32_t)SEGMENT.speed * 20);
+  uint_fast16_t phase = SEGMENT.custom1 % n;
+
+  uint32_t totalMs = (uint32_t)n * dwellMs;
+  uint32_t t       = strip.now % totalMs;
+  uint_fast16_t curIdx  = (t / dwellMs + phase) % n;
+  uint_fast16_t nextIdx = (curIdx + 1) % n;
+
+  uint8_t raw   = (uint8_t)(((t % dwellMs) * 255u) / dwellMs);
+  uint8_t level = (uint8_t)((uint32_t)raw * steps / 256u);
+  uint8_t lerpT = (steps <= 1) ? 0 : (uint8_t)((uint32_t)level * 255u / (steps - 1));
+
+  uint8_t r = ((uint16_t)buf[curIdx*3+0] * (255 - lerpT)
+             + (uint16_t)buf[nextIdx*3+0] * lerpT) / 255;
+  uint8_t g = ((uint16_t)buf[curIdx*3+1] * (255 - lerpT)
+             + (uint16_t)buf[nextIdx*3+1] * lerpT) / 255;
+  uint8_t b = ((uint16_t)buf[curIdx*3+2] * (255 - lerpT)
+             + (uint16_t)buf[nextIdx*3+2] * lerpT) / 255;
+
+  const uint_fast16_t len = SEGLEN;
+  for (uint_fast16_t i = 0; i < len; i++) {
+    SEGMENT.setPixelColor((int)i, r, g, b);
+  }
+}
+static const char _data_FX_MODE_PHASED_CYCLE[] PROGMEM = "Phased Cycle@!,Steps,Phase,,,,,;;;01";
+
 //////////////////////////////////////////////////////////////////////////////////////////
 // mode data
 static const char _data_RESERVED[] PROGMEM = "RSVD";
@@ -11105,6 +11173,8 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_DYNAMIC_SMOOTH, &mode_dynamic_smooth, _data_FX_MODE_DYNAMIC_SMOOTH);
   addEffect(FX_MODE_PACMAN, &mode_pacman, _data_FX_MODE_PACMAN);
   addEffect(FX_MODE_SLOW_TRANSITION, &mode_slow_transition, _data_FX_MODE_SLOW_TRANSITION);
+  addEffect(FX_MODE_COMET_CYCLE, &mode_comet_cycle, _data_FX_MODE_COMET_CYCLE);
+  addEffect(FX_MODE_PHASED_CYCLE, &mode_phased_cycle, _data_FX_MODE_PHASED_CYCLE);
 
   // --- 1D audio effects ---
   addEffect(FX_MODE_PIXELS, &mode_pixels, _data_FX_MODE_PIXELS);

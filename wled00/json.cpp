@@ -308,6 +308,34 @@ static bool deserializeSegment(JsonObject elem, byte it, byte presetId = 0)
 
   getVal(elem["bm"], seg.blendMode);
 
+  // Custom per-pixel color buffer consumed by FX_MODE_COMET_CYCLE and
+  // FX_MODE_PHASED_CYCLE. Array of [r,g,b] triples, up to 144 entries.
+  // Written into seg.data so the effect reads exact colors without the
+  // 16-stop palette interpolation limit.
+  JsonArray cbuf = elem[F("cbuf")];
+  if (!cbuf.isNull()) {
+    size_t n = cbuf.size();
+    if (n > 144) n = 144;
+    if (n > 0 && seg.allocateData(n * 3)) {
+      byte *buf = seg.data;
+      for (size_t i = 0; i < n; i++) {
+        JsonArray px = cbuf[i];
+        if (!px.isNull() && px.size() >= 3) {
+          buf[i*3 + 0] = px[0].as<uint8_t>();
+          buf[i*3 + 1] = px[1].as<uint8_t>();
+          buf[i*3 + 2] = px[2].as<uint8_t>();
+        }
+      }
+      // resetIfRequired() would memset the data we just wrote when the
+      // effect mode changed in the same payload. Clear the reset flag
+      // and zero the runtime counters ourselves.
+      if (seg.reset) {
+        seg.call = 0; seg.step = 0; seg.aux0 = 0; seg.aux1 = 0;
+        seg.reset = false;
+      }
+    }
+  }
+
   JsonArray iarr = elem[F("i")]; //set individual LEDs
   if (!iarr.isNull()) {
     // set brightness immediately and disable transition
